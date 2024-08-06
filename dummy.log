@@ -1,0 +1,9 @@
+x: Inlined(None, Nil, Select(Ident("Value_this"), "inner"))
+fieldName: y
+fieldSymbol: val y
+y: Select(Inlined(None, Nil, Select(Ident("Value_this"), "inner")), "y")
+y.tpe: Value_this.inner.y
+y.tpe: Value_this.inner.y
+y.tpe: Value_this.inner.y
+x.tpe: Value_this.inner
+x.tpe: scala.quoted.runtime.impl.TypeImpl@58d49759
