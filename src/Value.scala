@@ -9,7 +9,7 @@ import scala.language.dynamics
 /// foo.y  // Value[Foo] -> Value[String]
 /// ```
 class Value[T](val inner: T) extends Dynamic {
-  transparent inline def selectDynamic[R](name: String): Value[R] = ${ selectUnderValue('inner, 'name) }
+  transparent inline def selectDynamic[R](name: String) = ${ selectUnderValue('inner, 'name) }
   override def toString: String = f"Value(${inner})"
   def :=(other: Value[T]) = {
     unifyTypes(this.inner, other.inner)
@@ -53,7 +53,10 @@ def unifyTypes[A, B](a: A, b: B) = (a, b) match {
       }
     }
   }
-  case _ => println(f"incompatible types ${a} and ${b}")
+  case (ua: Unifiable, ub: Unifiable) => if (!ua.unifyWith(ub)) {
+    println(f"error: incompatible types ${a} and ${b}")
+  }
+  case _ => println(f"error: incompatible types ${a} and ${b}")
 }
 
 abstract class IntParam {
@@ -92,7 +95,11 @@ object IntParam {
 
 case class UInt(val width: IntParam)
 
-class AxiBuffer {
+trait Unifiable {
+  def unifyWith(other: Unifiable): Boolean
+}
+
+class AxiBuffer extends Unifiable {
   val AW = InferrableIntParam()
   val DW = InferrableIntParam()
   val IW = InferrableIntParam()
@@ -106,11 +113,25 @@ class AxiBuffer {
   val out_id = UInt(IW)
 
   override def toString = f"AxiBuffer(${AW}, ${DW}, ${IW})"
+
+  def unifyWith(other: Unifiable) = other match {
+    case other: AxiBuffer => {
+      unifyTypes(in_addr, other.in_addr)
+      unifyTypes(in_data, other.in_data)
+      unifyTypes(in_id, other.in_id)
+      unifyTypes(out_addr, other.out_addr)
+      unifyTypes(out_data, other.out_data)
+      unifyTypes(out_id, other.out_id)
+      true
+    }
+    case _ => false
+  }
 }
 
 object Main {
   def main(args: Array[String]): Unit = {
     println("----- 8< ----- Basic Wire Checks ----- 8< -----")
+    println()
     val a = Wire(UInt(InferrableIntParam()))
     val b = Wire(UInt(InferrableIntParam()))
     val c = Wire(UInt(InferrableIntParam()))
@@ -118,19 +139,23 @@ object Main {
     println(f"b = ${b}")
     println(f"c = ${c}")
 
+    println("\n# Assign a := b")
     a := b
     println(f"a = ${a}")
     println(f"b = ${b}")
     println(f"c = ${c}")
 
+    println("\n# Assign c := b")
     c := b
     println(f"a = ${a}")
     println(f"b = ${b}")
     println(f"c = ${c}")
 
+    println("\n# Create z: UInt(42)")
     val z = Wire(UInt(ConstIntParam(42)))
     println(f"z = ${z}")
 
+    println("\n# Assign c := z")
     c := z
     println(f"a = ${a}")
     println(f"b = ${b}")
@@ -139,28 +164,45 @@ object Main {
 
     println()
     println("----- 8< ----- Params Through Instances ----- 8< -----")
+    println()
     val buf0 = Wire(AxiBuffer())
     val buf1 = Wire(AxiBuffer())
     println(f"buf0 = ${buf0}")
     println(f"buf1 = ${buf1}")
 
+    println("\n# Assign buf1.in_* := buf0.out_*")
     buf1.in_addr := buf0.out_addr
     buf1.in_data := buf0.out_data
     buf1.in_id := buf0.out_id
     println(f"buf0 = ${buf0}")
     println(f"buf1 = ${buf1}")
 
-    z := buf0.in_addr
-    // buf0.in_addr := z // <-- fails in type inference
+    println("\n# Assign buf0.in_addr := z")
+    buf0.in_addr := z
     Wire(UInt(ConstIntParam(512))) := buf1.out_data
-    Wire(UInt(ConstIntParam(5))) := buf0.in_id
-    // val id = Wire(UInt(FreeIntParam()))  // <-- fails in type inference
-    // id
     println(f"buf0 = ${buf0}")
     println(f"buf1 = ${buf1}")
 
-    // val buf2 = Wire(AxiBuffer())
-    // buf2 := buf1
+    println("\n# Assign buf2.in_id := id")
+    val id = Wire(UInt(InferrableIntParam()))
+    val buf2 = Wire(AxiBuffer())
+    buf2.in_id := id
+    println(f"id = ${id}")
+    println(f"buf2 = ${buf2}")
+
+    println("\n# Assign id := UInt(5)")
+    id := Wire(UInt(ConstIntParam(5)))
+    println(f"id = ${id}")
+    println(f"buf2 = ${buf2}")
+
+    // Wholesale connect buf2 to buf1. This should unify the two AxiBuffer
+    // types by unifying corresponding fields.
+    println("\n# Assign buf2 := buf1")
+    buf2 := buf1
+    println(f"id = ${id}")
+    println(f"buf0 = ${buf0}")
+    println(f"buf1 = ${buf1}")
+    println(f"buf2 = ${buf2}")
   }
 
   // def main(args: Array[String]): Unit = {
